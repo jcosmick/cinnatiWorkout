@@ -1,0 +1,202 @@
+<Window x:Class="CinnatiWorkout.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Cinnati Workout" Width="1360" Height="860" MinWidth="1100" MinHeight="600"
+        Icon="{DynamicResource AppIconBitmap}" WindowStartupLocation="CenterScreen" Background="{StaticResource BackgroundBrush}"
+        FontFamily="Segoe UI" FontSize="13" Foreground="{StaticResource TextBrush}"
+        TextOptions.TextFormattingMode="Display" UseLayoutRounding="True">
+    <Window.CommandBindings>
+        <CommandBinding Command="ApplicationCommands.Save" Executed="Save_Executed" />
+        <CommandBinding Command="ApplicationCommands.Print" Executed="Print_Executed" CanExecute="Print_CanExecute" />
+    </Window.CommandBindings>
+
+    <Window.Resources>
+        <!-- Menu del tasto destro su file e cartelle dell'albero (DataContext = FileNode). -->
+        <ContextMenu x:Key="NodeMenu" x:Shared="False">
+            <MenuItem Header="Rinomina" Tag="&#xE8AC;" InputGestureText="F2" Click="RenameNode_Click" />
+            <MenuItem Header="Duplica" Tag="&#xE8C8;" Click="DuplicateNode_Click">
+                <MenuItem.Style>
+                    <Style TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsFolder}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </MenuItem.Style>
+            </MenuItem>
+            <MenuItem Header="Mostra in Esplora file" Tag="&#xED25;" Click="RevealNode_Click" />
+            <Separator />
+            <MenuItem Header="Elimina" Tag="&#xE74D;" InputGestureText="Canc" Click="DeleteNode_Click" Foreground="{StaticResource DangerBrush}" />
+        </ContextMenu>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="290" MinWidth="220" MaxWidth="480" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- ===== Barra laterale ===== -->
+        <Border Background="{StaticResource SurfaceBrush}">
+            <DockPanel>
+                <!-- Marchio -->
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="20,20,20,6">
+                    <Image Source="{DynamicResource AppLogo}" Width="40" Height="40" RenderOptions.BitmapScalingMode="HighQuality" />
+                    <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="Cinnati Workout" FontSize="15" FontWeight="SemiBold" />
+                        <TextBlock Text="Schede e pliche" Style="{StaticResource Muted}" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Impostazioni in fondo -->
+                <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="8">
+                    <StackPanel>
+                        <Button Style="{StaticResource NavButton}" Tag="&#xE713;" Content="Impostazioni" Click="Settings_Click" />
+                        <TextBlock x:Name="RootPathText" Style="{StaticResource Muted}" FontSize="11" Margin="12,2,12,4"
+                                   TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Crea nuovo -->
+                <StackPanel DockPanel.Dock="Top" Margin="8,0">
+                    <TextBlock Text="CREA NUOVO" Style="{StaticResource SectionLabel}" />
+                    <Button Style="{StaticResource NavButton}" Click="NewWorkout_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xF0E3;" Style="{StaticResource Icon}" Foreground="{DynamicResource AccentTextBrush}" Margin="0,0,10,0" />
+                            <TextBlock Text="Scheda allenamento" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource NavButton}" Click="NewSkinfold_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xEB05;" Style="{StaticResource Icon}" Foreground="{StaticResource SkinfoldBrush}" Margin="0,0,10,0" />
+                            <TextBlock Text="Scheda pliche" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource NavButton}" Click="NewFolder_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xED25;" Style="{StaticResource Icon}" Foreground="{StaticResource FolderBrush}" Margin="0,0,10,0" />
+                            <TextBlock Text="Cartella" />
+                        </StackPanel>
+                    </Button>
+
+                    <DockPanel Margin="0,8,0,0">
+                        <Button DockPanel.Dock="Right" Style="{StaticResource IconButton}" Tag="&#xE72C;" ToolTip="Aggiorna elenco"
+                                Click="Refresh_Click" Width="26" Height="26" Margin="0,12,6,0" />
+                        <TextBlock Text="FILE" Style="{StaticResource SectionLabel}" />
+                    </DockPanel>
+                </StackPanel>
+
+                <TreeView x:Name="FolderTree" SelectedItemChanged="FolderTree_SelectedItemChanged" KeyDown="FolderTree_KeyDown" Margin="8,0,4,8"
+                          AllowDrop="True" PreviewMouseLeftButtonDown="FolderTree_PreviewMouseLeftButtonDown"
+                          PreviewMouseMove="FolderTree_PreviewMouseMove" DragOver="FolderTree_DragOver"
+                          DragLeave="FolderTree_DragLeave" Drop="FolderTree_Drop">
+                    <TreeView.ItemContainerStyle>
+                        <Style TargetType="TreeViewItem" BasedOn="{StaticResource {x:Type TreeViewItem}}">
+                            <Setter Property="ContextMenu" Value="{StaticResource NodeMenu}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsPlaceholder}" Value="True">
+                                    <Setter Property="ContextMenu" Value="{x:Null}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TreeView.ItemContainerStyle>
+                    <TreeView.ItemTemplate>
+                        <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock x:Name="Glyph" Style="{StaticResource Icon}" Margin="0,0,8,0" />
+                                <TextBlock x:Name="Label" Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                           ToolTip="{Binding Name}" />
+                            </StackPanel>
+                            <HierarchicalDataTemplate.Triggers>
+                                <DataTrigger Binding="{Binding Kind}" Value="folder">
+                                    <Setter TargetName="Glyph" Property="Text" Value="&#xED25;" />
+                                    <Setter TargetName="Glyph" Property="Foreground" Value="{StaticResource FolderBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Kind}" Value="workout">
+                                    <Setter TargetName="Glyph" Property="Text" Value="&#xF0E3;" />
+                                    <Setter TargetName="Glyph" Property="Foreground" Value="{DynamicResource AccentTextBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Kind}" Value="skinfold">
+                                    <Setter TargetName="Glyph" Property="Text" Value="&#xEB05;" />
+                                    <Setter TargetName="Glyph" Property="Foreground" Value="{StaticResource SkinfoldBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Kind}" Value="placeholder">
+                                    <Setter TargetName="Label" Property="Foreground" Value="{StaticResource SubtleBrush}" />
+                                </DataTrigger>
+                            </HierarchicalDataTemplate.Triggers>
+                        </HierarchicalDataTemplate>
+                    </TreeView.ItemTemplate>
+                </TreeView>
+            </DockPanel>
+        </Border>
+
+        <GridSplitter Grid.Column="1" Width="1" HorizontalAlignment="Stretch" Background="{StaticResource LineBrush}" />
+
+        <!-- ===== Area principale ===== -->
+        <DockPanel Grid.Column="2">
+            <Border x:Name="TopBar" DockPanel.Dock="Top" Background="{StaticResource SurfaceBrush}"
+                    BorderBrush="{StaticResource LineBrush}" BorderThickness="0,0,0,1" Padding="28,14" Visibility="Collapsed">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Border x:Name="FileIconBox" Width="40" Height="40" CornerRadius="10" Background="{DynamicResource AccentSoftBrush}">
+                        <TextBlock x:Name="FileIcon" Style="{StaticResource Icon}" FontSize="18" HorizontalAlignment="Center"
+                                   Foreground="{DynamicResource AccentTextBrush}" />
+                    </Border>
+                    <StackPanel Grid.Column="1" Margin="14,0,16,0" VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="FileNameText" Style="{StaticResource PageTitle}" TextTrimming="CharacterEllipsis" />
+                            <Border x:Name="DirtyBadge" Style="{StaticResource Pill}" Background="{StaticResource WarningSoftBrush}"
+                                    Margin="12,0,0,0" Visibility="Collapsed">
+                                <TextBlock Text="Modifiche non salvate" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource WarningTextBrush}" />
+                            </Border>
+                        </StackPanel>
+                        <TextBlock x:Name="FilePathText" Style="{StaticResource Muted}" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button x:Name="RenameButton" Style="{StaticResource GhostButton}" Tag="&#xE8AC;" Content="Rinomina"
+                                ToolTip="Rinomina il file (F2)" Click="RenameOpen_Click" />
+                        <Button x:Name="DuplicateButton" Style="{StaticResource GhostButton}" Tag="&#xE8C8;" Content="Duplica"
+                                ToolTip="Crea una copia con un nuovo nome" Click="Duplicate_Click" Margin="4,0,0,0" />
+                        <Button x:Name="PrintButton" Style="{StaticResource GhostButton}" Tag="&#xE749;" Content="Stampa"
+                                ToolTip="Stampa (Ctrl+P)" Command="ApplicationCommands.Print" Margin="4,0,12,0" />
+                        <Button x:Name="SaveButton" Style="{StaticResource PrimaryButton}" Tag="&#xE74E;" Content="Salva"
+                                ToolTip="Salva (Ctrl+S)" Command="ApplicationCommands.Save" Padding="18,8" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Grid>
+                <ContentControl x:Name="EditorHost" Focusable="False" />
+
+                <!-- Stato vuoto -->
+                <StackPanel x:Name="EmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="440">
+                    <Border Width="72" Height="72" CornerRadius="20" Background="{DynamicResource AccentSoftBrush}" HorizontalAlignment="Center">
+                        <TextBlock Text="&#xE8E5;" Style="{StaticResource Icon}" FontSize="30" Foreground="{DynamicResource AccentTextBrush}" HorizontalAlignment="Center" />
+                    </Border>
+                    <TextBlock Text="Apri o crea una scheda" Style="{StaticResource PageTitle}" FontSize="20" HorizontalAlignment="Center" Margin="0,20,0,6" />
+                    <TextBlock Text="Scegli un file dall'elenco a sinistra, oppure creane uno nuovo." Style="{StaticResource Muted}" FontSize="13"
+                               HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,22,0,0">
+                        <Button Style="{StaticResource PrimaryButton}" Tag="&#xE710;" Content="Scheda allenamento" Click="NewWorkout_Click" Margin="0,0,8,0" />
+                        <Button Tag="&#xE710;" Content="Scheda pliche" Click="NewSkinfold_Click" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Notifica -->
+                <Border x:Name="Toast" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,28,24"
+                        Background="#1E293B" CornerRadius="8" Padding="16,10" Opacity="0" IsHitTestVisible="False">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE73E;" Style="{StaticResource Icon}" Foreground="{DynamicResource AccentLightBrush}" Margin="0,0,10,0" />
+                        <TextBlock x:Name="ToastText" Foreground="White" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </DockPanel>
+    </Grid>
+</Window>

@@ -1,0 +1,27 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>CinnatiWorkout</AssemblyName>
+    <RootNamespace>CinnatiWorkout</RootNamespace>
+    <Product>Cinnati Workout</Product>
+    <Company>Cinnati Alessia Personal Trainer</Company>
+    <Version>1.11.0</Version>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ClosedXML" Version="0.104.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Templates\scheda-allenamento.ods" LogicalName="Templates.scheda-allenamento.ods" />
+    <EmbeddedResource Include="Templates\pliche-uomo.xlsx" LogicalName="Templates.pliche-uomo.xlsx" />
+    <EmbeddedResource Include="Templates\pliche-donna.xlsx" LogicalName="Templates.pliche-donna.xlsx" />
+  </ItemGroup>
+
+</Project>

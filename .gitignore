@@ -1,0 +1,20 @@
+# Build output
+bin/
+obj/
+build/
+dist/
+publish/
+*.msi
+*.wixpdb
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+
+# File di lavoro/clienti nella root (i template stanno in src/CinnatiWorkout/Templates)
+/*.xlsx
+/*.ods
+~$*
+.~lock.*

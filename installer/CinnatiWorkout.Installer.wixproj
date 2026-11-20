@@ -1,0 +1,9 @@
+﻿<Project Sdk="WixToolset.Sdk/5.0.2">
+  <PropertyGroup>
+    <OutputName>CinnatiWorkout-Setup</OutputName>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <PublishDir Condition="'$(PublishDir)' == ''">$(MSBuildThisFileDirectory)..\publish\</PublishDir>
+    <DefineConstants>PublishDir=$([MSBuild]::EnsureTrailingSlash('$(PublishDir)'))</DefineConstants>
+    <SuppressIces>ICE61</SuppressIces>
+  </PropertyGroup>
+</Project>

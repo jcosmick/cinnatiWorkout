@@ -1,0 +1,33 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Cinnati Workout"
+           Manufacturer="Cinnati Alessia Personal Trainer"
+           Version="!(bind.FileVersion.AppExe)"
+           UpgradeCode="6B1E2C47-9D3A-4F58-A1C2-7E5D3B9F0A64"
+           Language="1040" Codepage="1252">
+
+    <MajorUpgrade DowngradeErrorMessage="È già installata una versione più recente di [ProductName]." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="AppIcon.exe" SourceFile="$(PublishDir)CinnatiWorkout.exe" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon.exe" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Cinnati Workout">
+        <Component Id="MainExecutable">
+          <File Id="AppExe" Source="$(PublishDir)CinnatiWorkout.exe" KeyPath="yes">
+            <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="Cinnati Workout"
+                      Advertise="yes" Icon="AppIcon.exe" WorkingDirectory="INSTALLFOLDER" />
+            <Shortcut Id="DesktopShortcut" Directory="DesktopFolder" Name="Cinnati Workout"
+                      Advertise="yes" Icon="AppIcon.exe" WorkingDirectory="INSTALLFOLDER" />
+          </File>
+        </Component>
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+    <StandardDirectory Id="DesktopFolder" />
+
+    <Feature Id="Main">
+      <ComponentRef Id="MainExecutable" />
+    </Feature>
+  </Package>
+</Wix>
