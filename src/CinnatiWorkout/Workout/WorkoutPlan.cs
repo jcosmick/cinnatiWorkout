@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Collections.Specialized;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using System.Windows.Data;

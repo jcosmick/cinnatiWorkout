@@ -14,6 +14,9 @@ public partial class SkinfoldEditor : UserControl, IDocumentEditor
     public bool IsDirty => _workbook.IsDirty;
     public event EventHandler? DirtyChanged;
 
+    /// <summary>Nome del foglio (es. "P.3") della rilevazione selezionata.</summary>
+    public string? SelectedSheetName => (MeasureList.SelectedItem as Measurement)?.SheetName;
+
     /// <summary>Il file è stato riscritto sull'altro modello (uomo/donna) e salvato.</summary>
     public event EventHandler<string>? Converted;
 

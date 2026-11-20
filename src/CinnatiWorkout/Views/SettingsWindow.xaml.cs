@@ -13,6 +13,8 @@ public partial class SettingsWindow : Window
     readonly string _originalAccent;
     string _accent;
     bool _updatingHex;
+    /// <summary>Logo scelto nella finestra (applicato solo con "Salva"): percorso dell'immagine o null.</summary>
+    string? _logoPath;
 
     public SettingsWindow(AppSettings settings, bool firstRun)
     {
@@ -41,7 +43,37 @@ public partial class SettingsWindow : Window
             SwatchPanel.Children.Add(swatch);
         }
         SelectAccent(_accent);
+        ShowLogo(settings.LogoPath != null && File.Exists(settings.LogoPath) ? settings.LogoPath : null);
     }
+
+    // --- logo ---------------------------------------------------------------------------
+
+    void ShowLogo(string? path)
+    {
+        var image = path != null ? AppSettings.LoadImage(path) : null;
+        _logoPath = image != null ? path : null;
+        LogoPreview.Source = image;
+        LogoEmpty.Visibility = image == null ? Visibility.Visible : Visibility.Collapsed;
+        RemoveLogoButton.IsEnabled = image != null;
+    }
+
+    void ChooseLogo_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "Logo per le schede",
+            Filter = "Immagini (*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff)|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff",
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        if (AppSettings.LoadImage(dialog.FileName) == null)
+        {
+            MessageDialog.Show(this, "Impossibile leggere l'immagine scelta.", "Logo", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        ShowLogo(dialog.FileName);
+    }
+
+    void RemoveLogo_Click(object sender, RoutedEventArgs e) => ShowLogo(null);
 
     // --- colore -------------------------------------------------------------------------
 
@@ -109,6 +141,15 @@ public partial class SettingsWindow : Window
         }
         _settings.RootPath = path;
         _settings.AccentColor = _accent;
+        try
+        {
+            _settings.SetLogo(_logoPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            MessageDialog.Show(this, $"Impossibile salvare il logo: {ex.Message}", "Impostazioni", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
         _settings.Save();
         DialogResult = true;
     }

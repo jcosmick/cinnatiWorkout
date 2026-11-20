@@ -67,7 +67,7 @@ public partial class MainWindow : Window
         {
             _editor = null;
             _openPath = path;
-            EditorHost.Content = UnsupportedPanel(path, ex.Message);
+            EditorHost.Content = UnsupportedPanel(ex.Message);
         }
         finally
         {
@@ -92,7 +92,7 @@ public partial class MainWindow : Window
         }
     }
 
-    UIElement UnsupportedPanel(string path, string message)
+    UIElement UnsupportedPanel(string message)
     {
         var panel = new StackPanel();
         panel.Children.Add(new TextBlock { Text = "\uE7BA", Style = (Style)FindResource("Icon"), FontSize = 26, Foreground = (Brush)FindResource("WarningTextBrush"), HorizontalAlignment = HorizontalAlignment.Left });
@@ -195,53 +195,53 @@ public partial class MainWindow : Window
     void Print_CanExecute(object sender, CanExecuteRoutedEventArgs e) => e.CanExecute = _editor != null;
 
     /// <summary>
-    /// Stampa il file così com'è: lo salva e lo apre su Google Drive nel browser
-    /// (Google Fogli per .xlsx, anteprima di Drive per .ods), dove si stampa con Ctrl+P.
+    /// Stampa il file così com'è (impaginazione, bordi, immagini e impostazioni di pagina del file),
+    /// disegnandolo direttamente dall'app: anteprima, scelta dei fogli e finestra di stampa di Windows.
     /// </summary>
     void Print_Executed(object sender, ExecutedRoutedEventArgs e)
     {
         if (_editor == null || _openPath == null) return;
-        bool justSaved = false;
         if (_editor.IsDirty)
         {
             var answer = MessageDialog.Show(this,
-                "Per stampare il file così com'è va prima salvato. Salvare le modifiche?\n\n" +
-                "Scegliendo No si stampa l'ultima versione salvata.",
-                "Stampa", MessageBoxButton.YesNoCancel, MessageBoxImage.Question, yesText: "Salva e stampa", noText: "Non salvare");
+                "Si stampa il file così come è salvato. Salvare prima le modifiche?\n\n" +
+                "Scegliendo \"Stampa senza salvare\" si stampa l'ultima versione salvata.",
+                "Stampa", MessageBoxButton.YesNoCancel, MessageBoxImage.Question,
+                yesText: "Salva e stampa", noText: "Stampa senza salvare");
             if (answer == MessageBoxResult.Cancel) return;
-            if (answer == MessageBoxResult.Yes)
-            {
-                if (!TrySave()) return;
-                justSaved = true;
-            }
+            if (answer == MessageBoxResult.Yes && !TrySave()) return;
         }
 
+        List<Printing.Sheet> sheets;
         Mouse.OverrideCursor = Cursors.Wait;
-        string? url;
         try
         {
-            url = DriveLocator.WebUrl(_openPath);
+            sheets = Path.GetExtension(_openPath).Equals(".ods", StringComparison.OrdinalIgnoreCase)
+                ? Printing.OdsSheetReader.Read(_openPath)
+                : Printing.XlsxSheetReader.Read(_openPath);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or System.Xml.XmlException or UnauthorizedAccessException)
+        {
+            MessageDialog.Show(this, $"Impossibile preparare la stampa: {ex.Message}", "Stampa", MessageBoxButton.OK, MessageBoxImage.Error);
+            return;
         }
         finally
         {
             Mouse.OverrideCursor = null;
         }
+        if (sheets.Count == 0) return;
 
-        if (url == null)
-        {
-            if (MessageDialog.Show(this,
-                    "Non trovo questo file su Google Drive: forse non è ancora stato caricato (file appena creato) " +
-                    "oppure la cartella non è sincronizzata da Drive per desktop.\n\n" +
-                    "Aprire la ricerca del file su drive.google.com?",
-                    "Stampa", MessageBoxButton.YesNo, MessageBoxImage.Information, yesText: "Apri ricerca", noText: "Annulla") != MessageBoxResult.Yes)
-                return;
-            url = DriveLocator.SearchUrl(_openPath);
-        }
+        // Logo delle impostazioni: solo sulle schede allenamento, non sulle pliche.
+        if (FileNode.KindOf(_openPath) == "workout" && _settings.LoadLogo() is { } logo)
+            foreach (var sheet in sheets) sheet.Logo = logo;
 
-        Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-        ShowToast(justSaved
-            ? "Aperto su Google Drive: attendi la sincronizzazione, poi stampa con Ctrl+P"
-            : "Aperto su Google Drive: stampa con Ctrl+P");
+        // Pliche: si propone la rilevazione aperta nell'editor; gli altri fogli si aggiungono dall'anteprima.
+        var selected = _editor is SkinfoldEditor { SelectedSheetName: { } current } && sheets.Any(s => s.Name == current)
+            ? new[] { current }
+            : new[] { sheets[0].Name };
+
+        if (PrintPreviewWindow.Show(this, Path.GetFileNameWithoutExtension(_openPath), sheets, selected))
+            ShowToast("Inviato alla stampante");
     }
 
     void NewWorkout_Click(object sender, RoutedEventArgs e)

@@ -266,7 +266,7 @@ public sealed class OdsDocument
         foreach (var attribute in ValueAttributes) cell.Attribute(attribute)?.Remove();
     }
 
-    static string ReadText(XElement cell) => string.Join("\n", cell.Elements(Paragraph).Select(InlineText));
+    internal static string ReadText(XElement cell) => string.Join("\n", cell.Elements(Paragraph).Select(InlineText));
 
     static string InlineText(XElement element)
     {
