@@ -198,5 +198,8 @@
                 </Border>
             </Grid>
         </DockPanel>
+
+        <!-- Impostazioni: coprono tutta la finestra mentre sono aperte (nessuna finestra separata). -->
+        <ContentControl x:Name="SettingsHost" Grid.ColumnSpan="3" Focusable="False" Visibility="Collapsed" />
     </Grid>
 </Window>

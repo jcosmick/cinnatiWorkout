@@ -45,15 +45,7 @@ public partial class App : Application
 
         var settings = AppSettings.Load();
         ThemeManager.Apply(settings.AccentColor);
-        if (!settings.HasValidRoot)
-        {
-            var dialog = new SettingsWindow(settings, firstRun: true);
-            if (dialog.ShowDialog() != true)
-            {
-                Shutdown();
-                return;
-            }
-        }
+        // Senza cartella principale valida la finestra principale si apre direttamente sulle impostazioni (primo avvio).
 
         var main = new MainWindow(settings);
         MainWindow = main;

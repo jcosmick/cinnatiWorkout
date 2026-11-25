@@ -1,13 +1,17 @@
-using System.ComponentModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.Win32;
 
 namespace CinnatiWorkout.Views;
 
-public partial class SettingsWindow : Window
+/// <summary>
+/// Impostazioni mostrate dentro la finestra principale (al posto del contenuto).
+/// Alla chiusura solleva <see cref="Closed"/>: true se le impostazioni sono state salvate.
+/// </summary>
+public partial class SettingsView : UserControl
 {
     readonly AppSettings _settings;
     readonly string _originalAccent;
@@ -15,8 +19,12 @@ public partial class SettingsWindow : Window
     bool _updatingHex;
     /// <summary>Logo scelto nella finestra (applicato solo con "Salva"): percorso dell'immagine o null.</summary>
     string? _logoPath;
+    bool _closed;
 
-    public SettingsWindow(AppSettings settings, bool firstRun)
+    /// <summary>Vista chiusa: true = salvato, false = annullato (colore di anteprima già ripristinato).</summary>
+    public event Action<bool>? Closed;
+
+    public SettingsView(AppSettings settings, bool firstRun)
     {
         InitializeComponent();
         _settings = settings;
@@ -24,7 +32,6 @@ public partial class SettingsWindow : Window
         RootBox.Text = settings.RootPath ?? (firstRun ? AppSettings.DetectGoogleDrive() ?? "" : "");
         if (firstRun)
         {
-            Title = "Cinnati Workout – primo avvio";
             HeaderText.Text = "Configura Cinnati Workout";
             IntroText.Text = "Primo avvio: scegli la cartella principale su Google Drive in cui si trovano schede e pliche. " +
                              "Potrai cambiarla in seguito dalle Impostazioni.";
@@ -43,7 +50,42 @@ public partial class SettingsWindow : Window
             SwatchPanel.Children.Add(swatch);
         }
         SelectAccent(_accent);
+        SubfoldersBox.Text = string.Join(Environment.NewLine, settings.RootSubfolders);
         ShowLogo(settings.LogoPath != null && File.Exists(settings.LogoPath) ? settings.LogoPath : null);
+
+        Loaded += (_, _) => RootBox.Focus();
+    }
+
+    /// <summary>Finestra che ospita la vista: proprietaria di messaggi e finestre di dialogo.</summary>
+    Window? Owner => Window.GetWindow(this);
+
+    // --- chiusura -----------------------------------------------------------------------
+
+    /// <summary>Chiude senza salvare: si torna al colore di prima.</summary>
+    public void Cancel()
+    {
+        if (_closed) return;
+        _closed = true;
+        ThemeManager.Apply(_originalAccent);
+        Closed?.Invoke(false);
+    }
+
+    void Cancel_Click(object sender, RoutedEventArgs e) => Cancel();
+
+    void View_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape) return;
+        e.Handled = true;
+        Cancel();
+    }
+
+    void Save_Executed(object sender, ExecutedRoutedEventArgs e) => Save();
+
+    // La stampa riguarda il file aperto: non è disponibile mentre le impostazioni sono aperte.
+    void Print_CanExecute(object sender, CanExecuteRoutedEventArgs e)
+    {
+        e.CanExecute = false;
+        e.Handled = true;
     }
 
     // --- logo ---------------------------------------------------------------------------
@@ -64,10 +106,10 @@ public partial class SettingsWindow : Window
             Title = "Logo per le schede",
             Filter = "Immagini (*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff)|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif;*.tiff",
         };
-        if (dialog.ShowDialog(this) != true) return;
+        if (dialog.ShowDialog(Owner!) != true) return;
         if (AppSettings.LoadImage(dialog.FileName) == null)
         {
-            MessageDialog.Show(this, "Impossibile leggere l'immagine scelta.", "Logo", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageDialog.Show(Owner, "Impossibile leggere l'immagine scelta.", "Logo", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         ShowLogo(dialog.FileName);
@@ -107,50 +149,61 @@ public partial class SettingsWindow : Window
 
     void ResetColor_Click(object sender, RoutedEventArgs e) => SelectAccent(ThemeManager.DefaultAccent);
 
-    protected override void OnClosing(CancelEventArgs e)
-    {
-        // Chiusura senza salvare: si torna al colore di prima.
-        if (DialogResult != true) ThemeManager.Apply(_originalAccent);
-        base.OnClosing(e);
-    }
-
     // --- cartella -----------------------------------------------------------------------
 
     void Browse_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new OpenFolderDialog { Title = "Cartella principale" };
         if (Directory.Exists(RootBox.Text)) dialog.InitialDirectory = RootBox.Text;
-        if (dialog.ShowDialog(this) == true) RootBox.Text = dialog.FolderName;
+        if (dialog.ShowDialog(Owner!) == true) RootBox.Text = dialog.FolderName;
     }
 
     void Detect_Click(object sender, RoutedEventArgs e)
     {
         var path = AppSettings.DetectGoogleDrive();
         if (path != null) RootBox.Text = path;
-        else MessageDialog.Show(this, "Cartella di Google Drive non trovata. Verifica che Google Drive per desktop sia installato e avviato, oppure usa \"Sfoglia…\".",
+        else MessageDialog.Show(Owner, "Cartella di Google Drive non trovata. Verifica che Google Drive per desktop sia installato e avviato, oppure usa \"Sfoglia…\".",
             "Google Drive", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
-    void Save_Click(object sender, RoutedEventArgs e)
+    void Save_Click(object sender, RoutedEventArgs e) => Save();
+
+    void Save()
     {
+        if (_closed) return;
         var path = RootBox.Text.Trim();
         if (!Directory.Exists(path))
         {
-            MessageDialog.Show(this, "La cartella indicata non esiste.", "Impostazioni", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageDialog.Show(Owner, "La cartella indicata non esiste.", "Impostazioni", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        var subfolders = SubfoldersBox.Text.Split('\n')
+            .Select(s => s.Trim())
+            .Where(s => s.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        // Niente "." o ".." né caratteri vietati: ogni riga deve essere il nome di una sola cartella.
+        var invalid = subfolders.FirstOrDefault(s => s.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || s.Trim('.').Length == 0);
+        if (invalid != null)
+        {
+            MessageDialog.Show(Owner, $"Nome di sottocartella non valido: \"{invalid}\". Non usare i caratteri \\ / : * ? \" < > |",
+                "Impostazioni", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         _settings.RootPath = path;
         _settings.AccentColor = _accent;
+        _settings.RootSubfolders = subfolders;
         try
         {
             _settings.SetLogo(_logoPath);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            MessageDialog.Show(this, $"Impossibile salvare il logo: {ex.Message}", "Impostazioni", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageDialog.Show(Owner, $"Impossibile salvare il logo: {ex.Message}", "Impostazioni", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
         _settings.Save();
-        DialogResult = true;
+        _closed = true;
+        Closed?.Invoke(true);
     }
 }

@@ -27,7 +27,9 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _settings = settings;
-        LoadRoot();
+        // Primo avvio (o cartella principale non più disponibile): prima si configura, poi si carica l'elenco.
+        if (_settings.HasValidRoot) LoadRoot();
+        else ShowSettings(firstRun: true);
     }
 
     void LoadRoot()
@@ -289,6 +291,12 @@ public partial class MainWindow : Window
             return;
         }
         Directory.CreateDirectory(path);
+        // Solo per le cartelle create direttamente nella cartella principale.
+        if (IsRoot(Path.GetDirectoryName(path)!))
+        {
+            foreach (var sub in _settings.RootSubfolders)
+                Directory.CreateDirectory(Path.Combine(path, sub));
+        }
         RefreshFolder(Path.GetDirectoryName(path)!);
     }
 
@@ -708,12 +716,46 @@ public partial class MainWindow : Window
     void Settings_Click(object sender, RoutedEventArgs e)
     {
         if (!ConfirmDiscard()) return;
+        ShowSettings(firstRun: false);
+    }
+
+    /// <summary>Mostra le impostazioni dentro la finestra, sopra barra laterale e contenuto.</summary>
+    void ShowSettings(bool firstRun)
+    {
+        if (SettingsHost.Content != null) return;
         var previous = _settings.RootPath;
-        if (new SettingsWindow(_settings, firstRun: false) { Owner = this }.ShowDialog() != true || previous == _settings.RootPath) return;
-        _editor = null;
-        _openPath = null;
-        EditorHost.Content = null;
-        LoadRoot();
+        var view = new SettingsView(_settings, firstRun);
+        view.Closed += saved =>
+        {
+            SettingsHost.Content = null;
+            SettingsHost.Visibility = Visibility.Collapsed;
+            SetMainContentEnabled(true);
+            if (firstRun)
+            {
+                // Primo avvio annullato: senza cartella principale l'app non può funzionare.
+                if (saved) LoadRoot();
+                else Close();
+                return;
+            }
+            if (!saved || previous == _settings.RootPath) return;
+            _editor = null;
+            _openPath = null;
+            EditorHost.Content = null;
+            LoadRoot();
+        };
+        SetMainContentEnabled(false);
+        SettingsHost.Content = view;
+        SettingsHost.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>
+    /// Disattiva barra laterale e contenuto sotto le impostazioni: non sono raggiungibili né con il mouse
+    /// né con la tastiera (Tab, scorciatoie), così al primo avvio nulla funziona senza cartella principale.
+    /// </summary>
+    void SetMainContentEnabled(bool enabled)
+    {
+        foreach (UIElement child in ((Panel)SettingsHost.Parent).Children)
+            if (child != SettingsHost) child.IsEnabled = enabled;
     }
 
     protected override void OnClosing(CancelEventArgs e)
