@@ -289,6 +289,12 @@ public partial class MainWindow : Window
             return;
         }
         Directory.CreateDirectory(path);
+        // Solo per le cartelle create direttamente nella cartella principale.
+        if (IsRoot(Path.GetDirectoryName(path)!))
+        {
+            foreach (var sub in _settings.RootSubfolders)
+                Directory.CreateDirectory(Path.Combine(path, sub));
+        }
         RefreshFolder(Path.GetDirectoryName(path)!);
     }
 

@@ -17,6 +17,12 @@ public sealed class AppSettings
     /// </summary>
     public string? LogoPath { get; set; }
 
+    /// <summary>
+    /// Sottocartelle create automaticamente dentro ogni nuova cartella creata direttamente nella
+    /// cartella principale (non nelle sue sottocartelle).
+    /// </summary>
+    public List<string> RootSubfolders { get; set; } = [];
+
     static string Folder => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CinnatiWorkout");
     static string FilePath => Path.Combine(Folder, "settings.json");
 

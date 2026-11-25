@@ -67,6 +67,17 @@
             </StackPanel>
         </Border>
 
+        <!-- Sottocartelle automatiche -->
+        <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Margin="0,22,0,0" Padding="0,20,0,0">
+            <StackPanel>
+                <TextBlock Text="SOTTOCARTELLE AUTOMATICHE" Style="{StaticResource FieldLabel}" />
+                <TextBlock TextWrapping="Wrap" Style="{StaticResource Muted}" Margin="0,0,0,12"
+                           Text="Create dentro ogni nuova cartella aggiunta direttamente nella cartella principale. Un nome per riga; lascia vuoto per non crearne." />
+                <TextBox x:Name="SubfoldersBox" AcceptsReturn="True" TextWrapping="NoWrap" MinHeight="80" MaxHeight="160"
+                         VerticalContentAlignment="Top" VerticalScrollBarVisibility="Auto" />
+            </StackPanel>
+        </Border>
+
         <!-- Colore principale -->
         <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Margin="0,22,0,0" Padding="0,20,0,0">
             <StackPanel>

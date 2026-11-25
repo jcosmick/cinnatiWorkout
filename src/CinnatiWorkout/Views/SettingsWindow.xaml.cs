@@ -43,6 +43,7 @@ public partial class SettingsWindow : Window
             SwatchPanel.Children.Add(swatch);
         }
         SelectAccent(_accent);
+        SubfoldersBox.Text = string.Join(Environment.NewLine, settings.RootSubfolders);
         ShowLogo(settings.LogoPath != null && File.Exists(settings.LogoPath) ? settings.LogoPath : null);
     }
 
@@ -139,8 +140,22 @@ public partial class SettingsWindow : Window
             MessageDialog.Show(this, "La cartella indicata non esiste.", "Impostazioni", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
+        var subfolders = SubfoldersBox.Text.Split('\n')
+            .Select(s => s.Trim())
+            .Where(s => s.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        // Niente "." o ".." né caratteri vietati: ogni riga deve essere il nome di una sola cartella.
+        var invalid = subfolders.FirstOrDefault(s => s.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || s.Trim('.').Length == 0);
+        if (invalid != null)
+        {
+            MessageDialog.Show(this, $"Nome di sottocartella non valido: \"{invalid}\". Non usare i caratteri \\ / : * ? \" < > |",
+                "Impostazioni", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
         _settings.RootPath = path;
         _settings.AccentColor = _accent;
+        _settings.RootSubfolders = subfolders;
         try
         {
             _settings.SetLogo(_logoPath);
