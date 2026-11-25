@@ -39,10 +39,30 @@ public partial class App : Application
 
         DispatcherUnhandledException += (_, args) =>
         {
-            MessageDialog.Show(null, args.Exception.Message, "Errore", MessageBoxButton.OK, MessageBoxImage.Error);
             args.Handled = true;
+            // Durante la chiusura non si mostrano finestre: il processo deve solo terminare.
+            if (!_exiting) MessageDialog.Show(null, args.Exception.Message, "Errore", MessageBoxButton.OK, MessageBoxImage.Error);
+            // Se non resta nessuna finestra visibile (errore all'avvio, prima della finestra principale)
+            // nessuno chiuderebbe più l'app: con ShutdownMode="OnExplicitShutdown" il processo
+            // resterebbe vivo in background senza finestre.
+            if (_exiting || !Windows.OfType<Window>().Any(w => w.IsVisible)) Shutdown(1);
         };
 
+        try
+        {
+            if (!ShowMainWindow()) Shutdown();
+        }
+        catch (Exception ex)
+        {
+            // Errore all'avvio: si avvisa e si chiude, invece di lasciare un processo senza finestre.
+            MessageDialog.Show(null, ex.Message, "Errore", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown(1);
+        }
+    }
+
+    /// <summary>Apre la finestra principale (dopo la configurazione iniziale, se serve). false = l'utente ha rinunciato.</summary>
+    bool ShowMainWindow()
+    {
         var settings = AppSettings.Load();
         ThemeManager.Apply(settings.AccentColor);
         // Senza cartella principale valida la finestra principale si apre direttamente sulle impostazioni (primo avvio).
@@ -50,7 +70,40 @@ public partial class App : Application
         var main = new MainWindow(settings);
         MainWindow = main;
         ShutdownMode = ShutdownMode.OnMainWindowClose;
+        // Chiusa la finestra principale l'app termina sempre, qualunque finestra sia ancora aperta
+        // e qualunque sia lo ShutdownMode in quel momento.
+        main.Closed += (_, _) => Shutdown();
         main.Show();
+        return true;
+    }
+
+    static bool _exiting;
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        _exiting = true;
+        base.OnExit(e);
+        StartExitWatchdog();
+    }
+
+    /// <summary>
+    /// Rete di sicurezza: se dopo la chiusura dell'interfaccia il processo è ancora vivo
+    /// (thread in primo piano, componenti COM/shell caricati dalle finestre di sistema, ecc.),
+    /// dopo qualche secondo viene terminato. Tutti i salvataggi sono sincroni e già conclusi a questo punto.
+    /// </summary>
+    static void StartExitWatchdog()
+    {
+        var watchdog = new Thread(() =>
+        {
+            Thread.Sleep(TimeSpan.FromSeconds(3));
+            try { Environment.Exit(Environment.ExitCode); }
+            catch { System.Diagnostics.Process.GetCurrentProcess().Kill(); }
+        })
+        {
+            IsBackground = true, // non tiene in vita il processo se la chiusura normale va a buon fine
+            Name = "Exit watchdog",
+        };
+        watchdog.Start();
     }
 
     static bool _clicking;
