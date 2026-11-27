@@ -3,6 +3,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Windows;
 using System.Windows.Media;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using CinnatiWorkout.Ods;
 
@@ -34,6 +35,14 @@ public static class OdsSheetReader
         var table = content.Descendants(Table + "table").FirstOrDefault()
             ?? throw new InvalidDataException("Il file non contiene fogli.");
         return [ReadTable(table, ctx)];
+    }
+
+    /// <summary>Primo foglio da un content.xml già in memoria (con lo styles.xml del file, se c'è).</summary>
+    public static Sheet ReadFirst(XDocument content, XDocument? styles)
+    {
+        var table = content.Descendants(Table + "table").FirstOrDefault()
+            ?? throw new InvalidDataException("Il file non contiene fogli.");
+        return ReadTable(table, new StyleContext(content, styles));
     }
 
     static XDocument? Load(ZipArchive zip, string name)
@@ -120,6 +129,7 @@ public static class OdsSheetReader
                             IsNumber = valueType is "float" or "percentage" or "currency" or "date" or "time",
                             IsBoolean = valueType == "boolean",
                             Format = format,
+                            StyleName = styleName,
                         });
                         if (!covered)
                         {
@@ -150,7 +160,7 @@ public static class OdsSheetReader
             for (int r = merge.Row1; r <= merge.Row2; r++)
                 for (int c = merge.Col1; c <= merge.Col2; c++)
                     if (r != merge.Row1 || c != merge.Col1)
-                        sheet.SetCell(r, c, new SheetCell { Format = anchor.Format });
+                        sheet.SetCell(r, c, new SheetCell { Format = anchor.Format, StyleName = sheet.GetCell(r, c)?.StyleName });
             lastUsedRow = Math.Max(lastUsedRow, merge.Row2);
             lastUsedCol = Math.Max(lastUsedCol, merge.Col2);
         }
@@ -166,18 +176,33 @@ public static class OdsSheetReader
         }
         sheet.SetRowHeights(heights);
 
-        sheet.PrintArea = ParsePrintRange((string?)table.Attribute(Table + "print-ranges"))
-                          ?? new CellRange(0, 0, Math.Max(lastUsedRow, 0), Math.Max(lastUsedCol, 0));
+        sheet.UsedArea = new CellRange(0, 0, Math.Max(lastUsedRow, 0), Math.Max(lastUsedCol, 0));
+        sheet.PrintArea = ParsePrintRange((string?)table.Attribute(Table + "print-ranges")) ?? sheet.UsedArea;
         ReadPageSetup(sheet.Page, ctx, (string?)table.Attribute(Table + "style-name"));
         return sheet;
     }
 
-    /// <summary>"Foglio1.A1:L60" (eventualmente con $ e più aree separate da spazio: si usa la prima).</summary>
-    static CellRange? ParsePrintRange(string? ranges)
+    /// <summary>
+    /// "Foglio1.A1:L60" (eventualmente con $, nome del foglio tra apici e più aree separate da spazio: si usa la prima).
+    /// </summary>
+    internal static CellRange? ParsePrintRange(string? ranges)
     {
         if (string.IsNullOrWhiteSpace(ranges)) return null;
-        var first = ranges.Split(' ', StringSplitOptions.RemoveEmptyEntries)[0].Replace("$", "");
-        return CellRange.Parse(first, ParseAddress);
+        // Gli spazi dentro un nome di foglio tra apici ('Foglio 1') non separano le aree.
+        var first = new System.Text.StringBuilder();
+        bool quoted = false;
+        foreach (char ch in ranges.Trim())
+        {
+            if (ch == '\'') quoted = !quoted;
+            else if (ch == ' ' && !quoted) break;
+            first.Append(ch);
+        }
+        var parts = Regex.Split(first.ToString(), ":(?=(?:[^']*'[^']*')*[^']*$)");
+        var a = ParseAddress(parts[0].Replace("$", ""));
+        var b = parts.Length > 1 ? ParseAddress(parts[1].Replace("$", "")) : a;
+        if (a == null || b == null) return null;
+        return new CellRange(Math.Min(a.Value.Row, b.Value.Row), Math.Min(a.Value.Col, b.Value.Col),
+            Math.Max(a.Value.Row, b.Value.Row), Math.Max(a.Value.Col, b.Value.Col));
     }
 
     /// <summary>"Foglio1.B7" → come <see cref="CellRange.ParseAddress"/>, ignorando il nome del foglio.</summary>

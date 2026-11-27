@@ -62,6 +62,40 @@ public sealed class OdsDocument
 
     public List<XElement> Rows => Table.Descendants(RowName).ToList();
 
+    /// <summary>content.xml in memoria (con le modifiche non ancora salvate).</summary>
+    internal XDocument Content => _content;
+    internal XElement TableElement => Table;
+
+    /// <summary>Un'altra parte XML del file così com'è sul disco (es. "styles.xml"), o null se manca.</summary>
+    internal XDocument? ReadPart(string name)
+    {
+        using var zip = ZipFile.OpenRead(FilePath);
+        var entry = zip.GetEntry(name);
+        if (entry == null) return null;
+        using var stream = entry.Open();
+        return XDocument.Load(stream, LoadOptions.PreserveWhitespace);
+    }
+
+    /// <summary>Elemento XML della cella (anche coperta) alla colonna indicata.</summary>
+    internal XElement CellElement(XElement row, int col) => Cell(row, col);
+
+    internal static bool IsCovered(XElement cell) => cell.Name == CoveredCellName;
+
+    /// <summary>Contenitore degli stili automatici di content.xml (creato se manca).</summary>
+    internal XElement AutomaticStyles
+    {
+        get
+        {
+            var styles = _content.Root!.Element(OfficeNs + "automatic-styles");
+            if (styles != null) return styles;
+            styles = new XElement(OfficeNs + "automatic-styles");
+            var body = _content.Root.Element(OfficeNs + "body");
+            if (body != null) body.AddBeforeSelf(styles);
+            else _content.Root.Add(styles);
+            return styles;
+        }
+    }
+
     public string GetText(XElement row, int col) => ReadText(Cell(row, col));
 
     public void SetText(XElement row, int col, string? value)
@@ -129,14 +163,7 @@ public sealed class OdsDocument
     /// <summary>Aggiunge uno stile di cella automatico (se non esiste già) e ne restituisce il nome.</summary>
     public string EnsureCellStyle(string name, XElement definition)
     {
-        var styles = _content.Root!.Element(OfficeNs + "automatic-styles");
-        if (styles == null)
-        {
-            styles = new XElement(OfficeNs + "automatic-styles");
-            var body = _content.Root.Element(OfficeNs + "body");
-            if (body != null) body.AddBeforeSelf(styles);
-            else _content.Root.Add(styles);
-        }
+        var styles = AutomaticStyles;
         if (!styles.Elements(StyleNs + "style").Any(s => (string?)s.Attribute(StyleNs + "name") == name))
         {
             var style = new XElement(definition);
@@ -156,7 +183,8 @@ public sealed class OdsDocument
         return row;
     }
 
-    public void Save()
+    /// <param name="parts">Altre parti del file da sostituire o aggiungere (percorso → contenuto; null = da togliere).</param>
+    public void Save(IReadOnlyDictionary<string, byte[]?>? parts = null)
     {
         // Si lavora su una copia temporanea e la si sostituisce solo a fine scrittura,
         // così un errore a metà non corrompe il file sincronizzato su Drive.
@@ -168,9 +196,17 @@ public sealed class OdsDocument
             {
                 zip.GetEntry("content.xml")?.Delete();
                 var entry = zip.CreateEntry("content.xml", CompressionLevel.Optimal);
-                using var stream = entry.Open();
-                using var writer = XmlWriter.Create(stream, new XmlWriterSettings { Encoding = new UTF8Encoding(false) });
-                _content.Save(writer);
+                using (var stream = entry.Open())
+                using (var writer = XmlWriter.Create(stream, new XmlWriterSettings { Encoding = new UTF8Encoding(false) }))
+                    _content.Save(writer);
+
+                foreach (var (name, data) in parts ?? new Dictionary<string, byte[]?>())
+                {
+                    zip.GetEntry(name)?.Delete();
+                    if (data == null) continue;
+                    using var part = zip.CreateEntry(name, CompressionLevel.Optimal).Open();
+                    part.Write(data);
+                }
             }
             File.Copy(temp, FilePath, overwrite: true);
         }

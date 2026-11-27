@@ -112,8 +112,11 @@ public static class SheetRenderer
     /// Prepara una scheda allenamento per una stampa più leggibile: al massimo <paramref name="blocksPerPage"/> schede
     /// per foglio, ogni gruppo intero sul suo foglio; margini ridotti, testi più grandi (le righe si allungano se il
     /// testo non ci sta più) e, se avanza spazio in altezza, righe allungate per riempire la pagina.
+    /// <paramref name="alreadyEnlarged"/> indica le celle il cui testo è già stato ingrandito (layout già scritto nel file):
+    /// non vengono ingrandite di nuovo, così ripetere la preparazione sullo stesso file dà sempre lo stesso risultato.
     /// </summary>
-    public static void PrepareReadablePrint(Sheet sheet, double textScale = 1.25, double maxRowStretch = 1.35, int blocksPerPage = 2)
+    public static void PrepareReadablePrint(Sheet sheet, double textScale = 1.25, double maxRowStretch = 1.35, int blocksPerPage = 2,
+        Func<int, int, bool>? alreadyEnlarged = null)
     {
         var area = sheet.PrintArea;
         var page = sheet.Page;
@@ -123,13 +126,16 @@ public static class SheetRenderer
         page.Margins = new Thickness(Math.Min(page.Margins.Left, margin), Math.Min(page.Margins.Top, margin),
             Math.Min(page.Margins.Right, margin), Math.Min(page.Margins.Bottom, margin));
 
+        ApplyPrintColors(sheet);
+
         // Testi più grandi (stessa proporzione tra titoli e celle).
         var scaled = new Dictionary<CellFormat, CellFormat>();
         foreach (var (key, cell) in sheet.Cells.ToList())
         {
+            if (alreadyEnlarged?.Invoke(key.Row, key.Col) == true) continue;
             if (!scaled.TryGetValue(cell.Format, out var format))
                 scaled[cell.Format] = format = cell.Format with { FontSize = cell.Format.FontSize * textScale };
-            sheet.SetCell(key.Row, key.Col, new SheetCell { Text = cell.Text, IsNumber = cell.IsNumber, IsBoolean = cell.IsBoolean, Format = format });
+            sheet.SetCell(key.Row, key.Col, new SheetCell { Text = cell.Text, IsNumber = cell.IsNumber, IsBoolean = cell.IsBoolean, Format = format, StyleName = cell.StyleName });
         }
 
         // Un testo su una riga sola che, ingrandito, non sta più nello spazio a disposizione verrebbe tagliato:
@@ -146,7 +152,7 @@ public static class SheetRenderer
             format = fitting >= format.FontSize / textScale
                 ? format with { FontSize = fitting }
                 : format with { Wrap = true };
-            sheet.SetCell(key.Row, key.Col, new SheetCell { Text = cell.Text, IsNumber = cell.IsNumber, IsBoolean = cell.IsBoolean, Format = format });
+            sheet.SetCell(key.Row, key.Col, new SheetCell { Text = cell.Text, IsNumber = cell.IsNumber, IsBoolean = cell.IsBoolean, Format = format, StyleName = cell.StyleName });
         }
 
         // Righe abbastanza alte per il testo ingrandito.
@@ -166,6 +172,45 @@ public static class SheetRenderer
         if (stretch <= 1.01) return;
         for (int r = area.Row1; r <= area.Row2; r++) heights[r] *= stretch;
         sheet.SetRowHeights(heights);
+    }
+
+    /// <summary>Grigio chiarissimo per lo sfondo della nota generale in stampa.</summary>
+    public static readonly Color NoteBackground = Color.FromRgb(0xF2, 0xF2, 0xF2);
+
+    static readonly System.Text.RegularExpressions.Regex TrainerLabel =
+        new(@"PERSONAL\s+TRAINER", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Colori della stampa, uguali per tutte le schede qualunque sia il file: il titolo "… PERSONAL TRAINER" in nero
+    /// e la nota generale (l'ultima riga con testo in colonna A sopra la prima scheda, se non è anche la prima) su grigio chiarissimo.
+    /// </summary>
+    static void ApplyPrintColors(Sheet sheet)
+    {
+        var area = sheet.PrintArea;
+        var starts = BlockStartRows(sheet);
+        int firstBlock = starts.Count > 0 ? starts[0] : area.Row2 + 1;
+
+        void Restyle(int row, int col, Func<CellFormat, CellFormat> change)
+        {
+            var cell = sheet.GetCell(row, col) ?? new SheetCell { Format = sheet.FormatAt(row, col) };
+            sheet.SetCell(row, col, new SheetCell { Text = cell.Text, IsNumber = cell.IsNumber, IsBoolean = cell.IsBoolean, Format = change(cell.Format), StyleName = cell.StyleName });
+        }
+
+        foreach (var (key, cell) in sheet.Cells.ToList())
+            if (key.Row < firstBlock && area.Contains(key.Row, key.Col) && TrainerLabel.IsMatch(cell.Text))
+                Restyle(key.Row, key.Col, f => f with { Foreground = Colors.Black });
+
+        var textRows = Enumerable.Range(area.Row1, Math.Max(0, firstBlock - area.Row1))
+            .Where(r => sheet.RowHeight(r) > 0 && (sheet.GetCell(r, area.Col1)?.Text.Trim().Length ?? 0) > 0)
+            .ToList();
+        if (textRows.Count < 2) return;
+        int noteRow = textRows[^1];
+        for (int c = area.Col1; c <= area.Col2; c++)
+        {
+            if (sheet.MergeAt(noteRow, c) is { } m && (m.Row1 != noteRow || m.Col1 != c)) continue;
+            if (sheet.FormatAt(noteRow, c).Background is { } bg && bg.A > 0 && bg != Colors.White)
+                Restyle(noteRow, c, f => f with { Background = NoteBackground });
+        }
     }
 
     /// <summary>
@@ -279,7 +324,10 @@ public static class SheetRenderer
     /// della prima colonna (nella scheda: colonne A–B accanto a "… PERSONAL TRAINER", righe 1–5).
     /// L'immagine mantiene le proporzioni ed è allineata in alto a sinistra.
     /// </summary>
-    static void DrawLogo(DrawingContext dc, Sheet sheet, BitmapSource logo)
+    static void DrawLogo(DrawingContext dc, Sheet sheet, BitmapSource logo) => dc.DrawImage(logo, LogoBounds(sheet, logo));
+
+    /// <summary>Posizione e misura del logo nelle coordinate del foglio (vedi <see cref="DrawLogo"/>).</summary>
+    public static Rect LogoBounds(Sheet sheet, BitmapSource logo)
     {
         var area = sheet.PrintArea;
         bool HasText(int r, int c) => (sheet.GetCell(r, c)?.Text.Length ?? 0) > 0
@@ -301,7 +349,7 @@ public static class SheetRenderer
         double ratio = logo.Height > 0 ? logo.Width / logo.Height : 1;
         double w = box.Width, h = w / ratio;
         if (h > box.Height) { h = box.Height; w = h * ratio; }
-        dc.DrawImage(logo, new Rect(box.X, box.Y, w, h));
+        return new Rect(box.X, box.Y, w, h);
     }
 
     /// <summary>Celle della pagina più le unioni che vi sporgono (la prima cella dell'unione può stare fuori pagina).</summary>

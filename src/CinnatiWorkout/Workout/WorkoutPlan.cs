@@ -176,8 +176,24 @@ public sealed class WorkoutPlan : Observable
             previousEnd = last;
         }
 
-        _doc.Save();
+        // Il file salvato (quello che Drive sincronizza) prende lo stesso layout della stampa dall'app.
+        var parts = WorkoutPrintLayout.Apply(_doc, WorkoutPrintLayout.LogoSource?.Invoke());
+        _doc.Save(parts);
+        RefreshTemplates();
         IsDirty = false;
+    }
+
+    /// <summary>
+    /// Le schede aggiunte dopo un salvataggio copiano le righe com'erano nel file appena scritto
+    /// (testi già ingranditi), non come erano all'apertura.
+    /// </summary>
+    void RefreshTemplates()
+    {
+        var model = Blocks.FirstOrDefault(b => b.LabelRow != null && b.HeaderRow != null);
+        if (model == null) return;
+        _templateLabel = new XElement(model.LabelRow!);
+        _templateHeader = new XElement(model.HeaderRow!);
+        if (model.SavedRowElements.Count > 0) _templateRow = new XElement(model.SavedRowElements[0]);
     }
 
     void InsertBlockRows(WorkoutBlock block, XElement? previousEnd)
@@ -191,7 +207,7 @@ public sealed class WorkoutPlan : Observable
 
     /// <summary>
     /// Scrive la nota generale. Se il file non ha ancora la riga della nota, la crea sotto
-    /// l'intestazione con lo stesso aspetto della scheda di esempio (riga rosa unita su tutte le colonne).
+    /// l'intestazione con lo stesso aspetto della stampa (riga grigio chiaro unita su tutte le colonne).
     /// </summary>
     void SaveNote()
     {
@@ -213,7 +229,7 @@ public sealed class WorkoutPlan : Observable
 
         int span = _titleRow != null ? Math.Max(_doc.ColumnSpan(_titleRow, 0), 1) : 12;
         if (span == 1) span = 12;
-        _doc.SetCellStyle(_noteRow, 0, _doc.EnsureCellStyle("ceCinnatiNote", NoteStyle()));
+        _doc.SetCellStyle(_noteRow, 0, _doc.EnsureCellStyle(WorkoutPrintLayout.NoteStyleName, NoteStyle()));
         _doc.MergeAcross(_noteRow, 0, span);
         _doc.SetText(_noteRow, 0, Note);
     }
@@ -225,7 +241,7 @@ public sealed class WorkoutPlan : Observable
             new XAttribute(style + "family", "table-cell"),
             new XAttribute(style + "parent-style-name", "Default"),
             new XElement(style + "table-cell-properties",
-                new XAttribute(fo + "background-color", "#f7d1d5"),
+                new XAttribute(fo + "background-color", "#f2f2f2"),
                 new XAttribute(fo + "wrap-option", "wrap"),
                 new XAttribute(style + "text-align-source", "fix"),
                 new XAttribute(style + "vertical-align", "middle")),

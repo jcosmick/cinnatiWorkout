@@ -27,6 +27,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _settings = settings;
+        WorkoutPrintLayout.LogoSource = () => _settings.LoadLogo();
         FitToWorkArea();
         // Primo avvio (o cartella principale non più disponibile): prima si configura, poi si carica l'elenco.
         if (_settings.HasValidRoot) LoadRoot();
@@ -254,8 +255,10 @@ public partial class MainWindow : Window
 
         if (FileNode.KindOf(_openPath) == "workout")
         {
-            // Schede allenamento: ognuna su un solo foglio, con testi e tabella ingranditi per leggerle meglio.
-            foreach (var sheet in sheets) Printing.SheetRenderer.PrepareReadablePrint(sheet);
+            // Schede allenamento: al massimo 2 schede per foglio, con testi e tabella ingranditi per leggerle meglio
+            // (lo stesso layout scritto nel file a ogni salvataggio).
+            bool applied = WorkoutPrintLayout.IsApplied(_openPath);
+            foreach (var sheet in sheets) WorkoutPrintLayout.Prepare(sheet, applied);
             // Logo delle impostazioni: solo sulle schede allenamento, non sulle pliche.
             if (_settings.LoadLogo() is { } logo)
                 foreach (var sheet in sheets) sheet.Logo = logo;

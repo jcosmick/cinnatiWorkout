@@ -281,6 +281,23 @@ public class ReadablePrintTests
     }
 
     [Fact]
+    public void TrainerTitleIsBlack_AndNoteBackgroundIsLightGrey()
+    {
+        var sheet = WithSchede(2);
+        var pink = System.Windows.Media.Color.FromRgb(0xF7, 0xD1, 0xD5);
+        var red = System.Windows.Media.Color.FromRgb(0xC0, 0x00, 0x00);
+        sheet.SetCell(0, 2, new SheetCell { Text = "ALESSIA CINNATI - PERSONAL TRAINER", Format = CellFormat.Empty with { Foreground = red } });
+        sheet.SetCell(0, 0, new SheetCell { Text = "GIADA NOVEMBRE 2026" });
+        sheet.SetCell(1, 0, new SheetCell { Text = "Bere molta acqua", Format = CellFormat.Empty with { Background = pink } });
+        sheet.SetCell(2, 0, new SheetCell());
+        SheetRenderer.PrepareReadablePrint(sheet);
+
+        Assert.Equal(System.Windows.Media.Colors.Black, sheet.GetCell(0, 2)!.Format.Foreground);
+        Assert.Equal(SheetRenderer.NoteBackground, sheet.GetCell(1, 0)!.Format.Background);
+        Assert.Null(sheet.GetCell(0, 0)!.Format.Background);
+    }
+
+    [Fact]
     public void Schede_HeaderStaysWithFirstPage_AndLaterPagesStartAtAScheda()
     {
         var sheet = WithSchede(3);

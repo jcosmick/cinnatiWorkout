@@ -53,6 +53,8 @@ public sealed class SheetCell
     public bool IsNumber { get; init; }
     public bool IsBoolean { get; init; }
     public CellFormat Format { get; init; } = CellFormat.Empty;
+    /// <summary>Nome dello stile di cella nel file (solo .ods): serve a riscrivere il layout di stampa nel file.</summary>
+    public string? StyleName { get; init; }
 }
 
 /// <summary>Area rettangolare di celle (estremi inclusi): celle unite, area di stampa, pagina.</summary>
@@ -136,6 +138,8 @@ public sealed class Sheet
 
     /// <summary>Area di stampa (estremi inclusi).</summary>
     public CellRange PrintArea { get; set; }
+    /// <summary>Celle usate (testo, sfondi, bordi), indipendentemente dall'area di stampa indicata nel file.</summary>
+    public CellRange UsedArea { get; set; }
 
     public IReadOnlyList<CellRange> Merges => _merges;
     public IEnumerable<KeyValuePair<(int Row, int Col), SheetCell>> Cells => _cells;
