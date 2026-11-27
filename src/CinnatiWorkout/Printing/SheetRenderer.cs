@@ -32,6 +32,17 @@ public static class SheetRenderer
         // La stampa occupa sempre tutta la larghezza utile tra i margini: le colonne vengono ingrandite o ridotte
         // per riempire esattamente le pagine in larghezza (una, salvo "adatta a N pagine in larghezza" nel file).
         // L'altezza segue la stessa scala e, se serve, continua sulle pagine successive.
+        if (page.FitToOnePage)
+        {
+            // Ogni gruppo di schede su un solo foglio, tutti con la stessa scala: la più grande con cui
+            // il gruppo più alto ci sta sia in larghezza sia in altezza.
+            var chunks = PageChunks(sheet);
+            double tallest = chunks.Max(c => sheet.RowY(c.Row2 + 1) - sheet.RowY(c.Row1));
+            double fit = Math.Min(contentW > 0 ? availW / contentW : page.Scale, tallest > 0 ? availH / tallest : page.Scale);
+            fit = Math.Clamp(fit, 0.1, 4);
+            return chunks.Select(c => new PrintPage(sheet, c, fit)).ToList();
+        }
+
         int pagesWide = Math.Max(1, page.FitWide);
         double scale = contentW > 0 ? availW * pagesWide / contentW : page.Scale;
         scale = Math.Clamp(scale, 0.1, 4);
@@ -58,6 +69,128 @@ public static class SheetRenderer
                     pages.Add(new PrintPage(sheet, new CellRange(r1, c1, r2, c2), scale));
         }
         return pages;
+    }
+
+    /// <summary>
+    /// Righe dell'area di stampa da mettere su ciascun foglio: gruppi di al massimo <see cref="PageSetup.BlocksPerPage"/>
+    /// schede (una scheda inizia alla riga con "SCHEDA …"). L'intestazione sta con il primo gruppo,
+    /// quel che segue l'ultima scheda con l'ultimo. Senza schede riconosciute: tutta l'area su un foglio.
+    /// </summary>
+    public static List<CellRange> PageChunks(Sheet sheet)
+    {
+        var area = sheet.PrintArea;
+        int perPage = sheet.Page.BlocksPerPage;
+        var starts = perPage > 0 ? BlockStartRows(sheet) : [];
+        if (starts.Count <= perPage || perPage <= 0) return [area];
+
+        var chunks = new List<CellRange>();
+        for (int i = 0; i < starts.Count; i += perPage)
+        {
+            int first = i == 0 ? area.Row1 : starts[i];
+            int last = i + perPage < starts.Count ? starts[i + perPage] - 1 : area.Row2;
+            chunks.Add(new CellRange(first, area.Col1, last, area.Col2));
+        }
+        return chunks;
+    }
+
+    static readonly System.Text.RegularExpressions.Regex BlockLabel =
+        new(@"^\s*SCHEDA\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>Righe (nell'area di stampa) in cui inizia una scheda: quelle con una cella che comincia con "SCHEDA".</summary>
+    static List<int> BlockStartRows(Sheet sheet)
+    {
+        var area = sheet.PrintArea;
+        return sheet.Cells
+            .Where(c => area.Contains(c.Key.Row, c.Key.Col) && sheet.RowHeight(c.Key.Row) > 0 && BlockLabel.IsMatch(c.Value.Text))
+            .Select(c => c.Key.Row)
+            .Distinct()
+            .Order()
+            .ToList();
+    }
+
+    /// <summary>
+    /// Prepara una scheda allenamento per una stampa più leggibile: al massimo <paramref name="blocksPerPage"/> schede
+    /// per foglio, ogni gruppo intero sul suo foglio; margini ridotti, testi più grandi (le righe si allungano se il
+    /// testo non ci sta più) e, se avanza spazio in altezza, righe allungate per riempire la pagina.
+    /// </summary>
+    public static void PrepareReadablePrint(Sheet sheet, double textScale = 1.25, double maxRowStretch = 1.35, int blocksPerPage = 2)
+    {
+        var area = sheet.PrintArea;
+        var page = sheet.Page;
+        page.FitToOnePage = true;
+        page.BlocksPerPage = blocksPerPage;
+        double margin = Units.FromCm(1);
+        page.Margins = new Thickness(Math.Min(page.Margins.Left, margin), Math.Min(page.Margins.Top, margin),
+            Math.Min(page.Margins.Right, margin), Math.Min(page.Margins.Bottom, margin));
+
+        // Testi più grandi (stessa proporzione tra titoli e celle).
+        var scaled = new Dictionary<CellFormat, CellFormat>();
+        foreach (var (key, cell) in sheet.Cells.ToList())
+        {
+            if (!scaled.TryGetValue(cell.Format, out var format))
+                scaled[cell.Format] = format = cell.Format with { FontSize = cell.Format.FontSize * textScale };
+            sheet.SetCell(key.Row, key.Col, new SheetCell { Text = cell.Text, IsNumber = cell.IsNumber, IsBoolean = cell.IsBoolean, Format = format });
+        }
+
+        // Un testo su una riga sola che, ingrandito, non sta più nello spazio a disposizione verrebbe tagliato:
+        // si riduce quanto basta (non sotto la dimensione originale), altrimenti va a capo.
+        foreach (var (key, cell) in sheet.Cells.ToList())
+        {
+            var format = cell.Format;
+            if (cell.Text.Length == 0 || format.Wrap || format.ShrinkToFit || !area.Contains(key.Row, key.Col)) continue;
+            if (sheet.MergeAt(key.Row, key.Col) is { } m && (m.Row1 != key.Row || m.Col1 != key.Col)) continue;
+            double room = TextRoom(sheet, key.Row, key.Col, cell);
+            double width = BuildText(cell.Text, format, format.FontSize).WidthIncludingTrailingWhitespace;
+            if (width <= room) continue;
+            double fitting = format.FontSize * room / width * 0.98;
+            format = fitting >= format.FontSize / textScale
+                ? format with { FontSize = fitting }
+                : format with { Wrap = true };
+            sheet.SetCell(key.Row, key.Col, new SheetCell { Text = cell.Text, IsNumber = cell.IsNumber, IsBoolean = cell.IsBoolean, Format = format });
+        }
+
+        // Righe abbastanza alte per il testo ingrandito.
+        var heights = new List<double>();
+        for (int r = 0; r <= area.Row2; r++) heights.Add(sheet.RowHeight(r));
+        for (int r = area.Row1; r <= area.Row2; r++)
+            if (heights[r] > 0) heights[r] = Math.Max(heights[r], MeasureRowHeight(sheet, r));
+        sheet.SetRowHeights(heights);
+
+        // Se la pagina è limitata dalla larghezza, l'altezza che avanza (sul foglio più pieno) allunga le righe in proporzione.
+        double availW = page.Paper.Width - page.Margins.Left - page.Margins.Right;
+        double availH = page.Paper.Height - page.Margins.Top - page.Margins.Bottom;
+        double contentW = sheet.ColumnX(area.Col2 + 1) - sheet.ColumnX(area.Col1);
+        double tallest = PageChunks(sheet).Max(c => sheet.RowY(c.Row2 + 1) - sheet.RowY(c.Row1));
+        if (contentW <= 0 || tallest <= 0) return;
+        double stretch = Math.Min(maxRowStretch, availH / tallest / (availW / contentW) * 0.995);
+        if (stretch <= 1.01) return;
+        for (int r = area.Row1; r <= area.Row2; r++) heights[r] *= stretch;
+        sheet.SetRowHeights(heights);
+    }
+
+    /// <summary>
+    /// Larghezza disponibile per il testo di una cella su una riga sola: la cella (o l'unione) meno i margini interni,
+    /// più le celle vuote accanto in cui il testo può sconfinare (non per i numeri), entro l'area di stampa.
+    /// </summary>
+    static double TextRoom(Sheet sheet, int row, int col, SheetCell cell)
+    {
+        var area = sheet.PrintArea;
+        var merge = sheet.MergeAt(row, col) ?? new CellRange(row, col, row, col);
+        var format = cell.Format;
+        double own = sheet.ColumnX(merge.Col2 + 1) - sheet.ColumnX(merge.Col1) - 2 * format.PaddingX - format.Indent;
+        if (cell.IsNumber || merge.Row1 != merge.Row2) return own;
+
+        bool Free(int c) => sheet.MergeAt(row, c) == null && (sheet.GetCell(row, c)?.Text.Length ?? 0) == 0;
+        double right = 0, left = 0;
+        for (int c = merge.Col2 + 1; c <= area.Col2 && Free(c); c++) right += sheet.ColumnWidth(c);
+        for (int c = merge.Col1 - 1; c >= area.Col1 && Free(c); c--) left += sheet.ColumnWidth(c);
+        return EffectiveAlign(cell) switch
+        {
+            HAlign.Center => own + 2 * Math.Min(left, right),
+            HAlign.Right => own + left,
+            HAlign.Justify => own,
+            _ => own + right,
+        };
     }
 
     static List<(int First, int Last)> Split(int first, int last, double available, Func<int, double> size, HashSet<int> breaks)

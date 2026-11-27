@@ -27,9 +27,28 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _settings = settings;
+        FitToWorkArea();
         // Primo avvio (o cartella principale non più disponibile): prima si configura, poi si carica l'elenco.
         if (_settings.HasValidRoot) LoadRoot();
         else ShowSettings(firstRun: true);
+    }
+
+    /// <summary>
+    /// Su schermi piccoli (portatili, ridimensionamento al 125-150%) la dimensione predefinita
+    /// è più grande dell'area utile: centrata, la finestra finirebbe con la barra del titolo
+    /// fuori schermo. In quel caso si parte ingranditi, con minimi che stanno nello schermo.
+    /// </summary>
+    void FitToWorkArea()
+    {
+        var area = SystemParameters.WorkArea;
+        MinWidth = Math.Min(MinWidth, area.Width);
+        MinHeight = Math.Min(MinHeight, area.Height);
+        if (Width <= area.Width && Height <= area.Height) return;
+
+        // Dimensione "ripristinata" che sta nello schermo, e avvio ingrandito.
+        Width = Math.Min(Width, area.Width * 0.92);
+        Height = Math.Min(Height, area.Height * 0.92);
+        WindowState = WindowState.Maximized;
     }
 
     void LoadRoot()
@@ -233,9 +252,14 @@ public partial class MainWindow : Window
         }
         if (sheets.Count == 0) return;
 
-        // Logo delle impostazioni: solo sulle schede allenamento, non sulle pliche.
-        if (FileNode.KindOf(_openPath) == "workout" && _settings.LoadLogo() is { } logo)
-            foreach (var sheet in sheets) sheet.Logo = logo;
+        if (FileNode.KindOf(_openPath) == "workout")
+        {
+            // Schede allenamento: ognuna su un solo foglio, con testi e tabella ingranditi per leggerle meglio.
+            foreach (var sheet in sheets) Printing.SheetRenderer.PrepareReadablePrint(sheet);
+            // Logo delle impostazioni: solo sulle schede allenamento, non sulle pliche.
+            if (_settings.LoadLogo() is { } logo)
+                foreach (var sheet in sheets) sheet.Logo = logo;
+        }
 
         // Pliche: si propone la rilevazione aperta nell'editor; gli altri fogli si aggiungono dall'anteprima.
         var selected = _editor is SkinfoldEditor { SelectedSheetName: { } current } && sheets.Any(s => s.Name == current)

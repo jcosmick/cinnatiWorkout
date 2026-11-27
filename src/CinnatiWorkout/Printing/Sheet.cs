@@ -101,6 +101,13 @@ public sealed class PageSetup
     public int FitTall { get; set; }
     /// <summary>Ordine delle pagine: prima verso il basso e poi a destra (Excel, LibreOffice predefinito).</summary>
     public bool DownThenOver { get; set; } = true;
+    /// <summary>
+    /// Ogni gruppo di schede (vedi <see cref="BlocksPerPage"/>; senza, tutta l'area di stampa) su un solo foglio di carta,
+    /// ridotto quanto serve (schede allenamento).
+    /// </summary>
+    public bool FitToOnePage { get; set; }
+    /// <summary>Con <see cref="FitToOnePage"/>: schede ("SCHEDA …") al massimo per foglio; 0 = nessuna divisione.</summary>
+    public int BlocksPerPage { get; set; }
 
     public bool IsLandscape => Paper.Width > Paper.Height;
 }
